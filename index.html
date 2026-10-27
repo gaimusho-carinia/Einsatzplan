@@ -67,17 +67,20 @@ function render() {
   const last = parse(dates.at(-1));
   for (; m <= last; m.setDate(m.getDate() + 7)) {
     const days = [...Array(5)].map((_, i) => { const d = new Date(m); d.setDate(d.getDate() + i); return iso(d); });
-    const split = days.map(d => by[d] && (by[d].vormittag || by[d].nachmittag));
-    let h = "<tr><th></th>", h2 = "";
-    days.forEach((d, i) => h += `<th colspan="${split[i] ? 2 : 1}">${WD[i]}<small>${label(d)}</small></th>`);
-    if (split.some(Boolean)) { h2 = "<tr><th></th>"; split.forEach(s => h2 += s ? "<th><small>Vormittag</small></th><th><small>Nachmittag</small></th>" : "<th></th>"); h2 += "</tr>"; }
+    const P = days.map(d => { const t = Object.keys(by[d] || {}).map(x => x === "ganztag" ? "vormittag" : x);
+      return t.includes("vormittag") && t.includes("nachmittag") ? ["vormittag", "nachmittag"] : [t[0] || "vormittag"]; });
+    const LB = { vormittag: "Vormittag", nachmittag: "Nachmittag" };
+    let h = "<tr><th></th>", h2 = "<tr><th></th>";
+    days.forEach((d, i) => { h += `<th colspan="${P[i].length}">${WD[i]}<small>${label(d)}</small></th>`;
+      h2 += by[d] ? P[i].map(p => `<th><small>${LB[p]}</small></th>`).join("") : "<th></th>"; });
+    h2 += "</tr>";
     const t = document.createElement("table"); t.innerHTML = h + "</tr>" + h2;
     KURSE.forEach((k, ki) => {
       const tr = document.createElement("tr"); tr.innerHTML = `<td class="k">${k}</td>`;
       days.forEach((d, i) => {
-        const parts = split[i] ? ["vormittag", "nachmittag"] : ["ganztag"];
+        const parts = P[i];
         if (N[d]) { if (!ki) { const td = document.createElement("td"); td.className = "note"; td.rowSpan = KURSE.length; td.colSpan = parts.length; td.textContent = N[d]; tr.append(td); } return; }
-        parts.forEach((p, pi) => { const x = by[d]?.[p]?.[k]; const td = document.createElement("td");
+        parts.forEach((p, pi) => { const x = by[d]?.[p]?.[k] || (p === "vormittag" ? by[d]?.ganztag?.[k] : null); const td = document.createElement("td");
           td.className = "n " + (x?.vertretung ? "vt" : "reg") + (pi ? " pm" : ""); td.dataset.name = x?.name || "";
           if (x) { td.textContent = x.name; if (x.vertretung) td.insertAdjacentHTML("beforeend", '<span class="v">V</span>'); }
           tr.append(td); });
