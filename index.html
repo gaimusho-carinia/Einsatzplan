@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deutschkurs-Plan</title><link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script></head><body>
+<div id="login" class="box" hidden>
+  <h1>Deutschkurs-Plan</h1>
+  <input type="password" id="pw" placeholder="Passwort" autocomplete="current-password">
+  <button class="btn" id="go">Anmelden</button><div class="err" id="err"></div>
+</div>
+<div id="app" hidden>
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <h1 style="margin:0">Deutschkurs-Plan</h1><select id="plan"></select>
+    <button class="btn ghost" id="out" style="margin-left:auto">Abmelden</button>
+  </div>
+  <div class="bar">
+    <div class="chips" id="chips"></div>
+    <div class="opts">
+      <label><input type="checkbox" id="hide"> Andere ausblenden</label>
+      <label><input type="checkbox" id="vonly"> Nur Vertretungen</label>
+      <label><input type="checkbox" id="list"> Einsatzliste unten anzeigen</label>
+      <button class="btn" id="ics" disabled>In Kalender übernehmen (.ics)</button>
+    </div>
+  </div>
+  <div id="cal"></div><div id="sum"></div>
+  <p style="color:var(--mut);font-size:12px">Gelb = Vertretung · Grau = Feiertag</p>
+</div>
+<script src="lib.js"></script>
+<script>
+const WD = ["Montag","Dienstag","Mittwoch","Donnerstag","Freitag"];
+const TEIL = { ganztag: "", vormittag: "vormittags", nachmittag: "nachmittags" };
+let E = [], N = {}, KURSE = [], sel = null, planName = "";
+const iso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+const parse = s => { const [y,m,d] = s.split("-").map(Number); return new Date(y, m-1, d); };
+const label = s => `${s.slice(8)}.${s.slice(5,7)}.`;
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  $("login").hidden = !!session; $("app").hidden = !session;
+  if (!session) return;
+  const { data: plans, error } = await sb.from("plans").select("*").order("created_at", { ascending: false });
+  if (error) { alert(error.message); return; }
+  $("plan").innerHTML = plans.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
+  if (plans.length) loadPlan(plans[0].id); else $("cal").textContent = "Noch kein Plan vorhanden.";
+}
+async function loadPlan(id) {
+  planName = $("plan").selectedOptions[0].textContent;
+  const [e, n] = await Promise.all([
+    sb.from("entries").select("*").eq("plan_id", id).range(0, 4999),
+    sb.from("day_notes").select("*").eq("plan_id", id)]);
+  E = e.data || []; N = Object.fromEntries((n.data || []).map(x => [x.datum, x.notiz]));
+  KURSE = [...new Set(E.map(x => x.kurs))].sort();
+  const names = [...new Set(E.map(x => x.name))].sort((a, b) => a.localeCompare(b, "de"));
+  const saved = localStorage.getItem("dk_name"); sel = names.includes(saved) ? saved : null;
+  $("chips").innerHTML = "";
+  names.forEach(n => { const b = document.createElement("button"); b.className = "chip"; b.textContent = n;
+    b.onclick = () => { sel = sel === n ? null : n; sel ? localStorage.setItem("dk_name", sel) : localStorage.removeItem("dk_name"); apply(); };
+    $("chips").append(b); });
+  render(); apply();
+}
+function render() {
+  const dates = [...E.map(x => x.datum), ...Object.keys(N)].sort();
+  $("cal").innerHTML = ""; if (!dates.length) return;
+  const by = {}; E.forEach(x => ((by[x.datum] ??= {})[x.teil] ??= {})[x.kurs] = x);
+  let m = parse(dates[0]); m.setDate(m.getDate() - ((m.getDay() + 6) % 7));
+  const last = parse(dates.at(-1));
+  for (; m <= last; m.setDate(m.getDate() + 7)) {
+    const days = [...Array(5)].map((_, i) => { const d = new Date(m); d.setDate(d.getDate() + i); return iso(d); });
+    const split = days.map(d => by[d] && (by[d].vormittag || by[d].nachmittag));
+    let h = "<tr><th></th>", h2 = "";
+    days.forEach((d, i) => h += `<th colspan="${split[i] ? 2 : 1}">${WD[i]}<small>${label(d)}</small></th>`);
+    if (split.some(Boolean)) { h2 = "<tr><th></th>"; split.forEach(s => h2 += s ? "<th><small>Vormittag</small></th><th><small>Nachmittag</small></th>" : "<th></th>"); h2 += "</tr>"; }
+    const t = document.createElement("table"); t.innerHTML = h + "</tr>" + h2;
+    KURSE.forEach((k, ki) => {
+      const tr = document.createElement("tr"); tr.innerHTML = `<td class="k">${k}</td>`;
+      days.forEach((d, i) => {
+        const parts = split[i] ? ["vormittag", "nachmittag"] : ["ganztag"];
+        if (N[d]) { if (!ki) { const td = document.createElement("td"); td.className = "note"; td.rowSpan = KURSE.length; td.colSpan = parts.length; td.textContent = N[d]; tr.append(td); } return; }
+        parts.forEach((p, pi) => { const x = by[d]?.[p]?.[k]; const td = document.createElement("td");
+          td.className = "n " + (x?.vertretung ? "vt" : "reg") + (pi ? " pm" : ""); td.dataset.name = x?.name || "";
+          if (x) { td.textContent = x.name; if (x.vertretung) td.insertAdjacentHTML("beforeend", '<span class="v">V</span>'); }
+          tr.append(td); });
+      });
+      t.append(tr);
+    });
+    const w = document.createElement("div"); w.className = "wrap"; w.append(t); $("cal").append(w);
+  }
+}
+function items() {
+  let it = E.filter(x => x.name === sel).sort((a, b) => a.datum.localeCompare(b.datum) || a.teil.localeCompare(b.teil));
+  return $("vonly").checked ? it.filter(x => x.vertretung) : it;
+}
+function apply() {
+  document.body.classList.toggle("f", !!sel);
+  document.body.classList.toggle("hide", $("hide").checked);
+  document.body.classList.toggle("vonly", $("vonly").checked);
+  [...$("chips").children].forEach(b => b.setAttribute("aria-pressed", b.textContent === sel));
+  document.querySelectorAll("td.n").forEach(td => td.classList.toggle("hit", !!sel && td.dataset.name === sel));
+  $("ics").disabled = !sel;
+  const s = $("sum");
+  if (!sel || !$("list").checked) { s.style.display = "none"; return; }
+  const it = items(), nv = it.filter(x => x.vertretung).length;
+  s.style.display = "block";
+  s.innerHTML = `<b>${sel}</b>: ${it.length} Einsätze${$("vonly").checked ? "" : `, davon ${nv} Vertretung${nv == 1 ? "" : "en"}`}<ul>` +
+    it.map(x => `<li>${WD[(parse(x.datum).getDay() + 6) % 7].slice(0, 2)} ${label(x.datum)} ${TEIL[x.teil]} · Kurs ${x.kurs}${x.vertretung ? " · <b>Vertretung</b>" : ""}</li>`).join("") + "</ul>";
+}
+function downloadICS() {
+  const esc = s => s.replace(/[\\;,]/g, "\\$&"), stamp = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z";
+  const L = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Deutschkurs-Plan//DE", "CALSCALE:GREGORIAN"];
+  items().forEach(x => {
+    const d = x.datum.replace(/-/g, ""), t = CONFIG.TIMES[x.teil];
+    L.push("BEGIN:VEVENT", `UID:${d}-${x.teil}-${x.kurs}-${x.name.replace(/\W/g, "")}@deutschkurs-plan`, `DTSTAMP:${stamp}`);
+    if (t) L.push(`DTSTART:${d}T${t[0].replace(":", "")}00`, `DTEND:${d}T${t[1].replace(":", "")}00`);
+    else { const n = parse(x.datum); n.setDate(n.getDate() + 1); L.push(`DTSTART;VALUE=DATE:${d}`, `DTEND;VALUE=DATE:${iso(n).replace(/-/g, "")}`); }
+    L.push(`SUMMARY:${esc(`${CONFIG.TITLE} ${x.kurs}${x.vertretung ? " (Vertretung)" : ""}`)}`,
+      `DESCRIPTION:${esc(`${planName} · ${x.name}`)}`, "END:VEVENT");
+  });
+  L.push("END:VCALENDAR");
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([L.join("\r\n")], { type: "text/calendar" }));
+  a.download = `Deutschkurs_${sel}.ics`; a.click();
+}
+$("go").onclick = async () => {
+  const { error } = await sb.auth.signInWithPassword({ email: CONFIG.READER_EMAIL, password: $("pw").value });
+  if (error) $("err").textContent = "Passwort falsch."; else { $("err").textContent = ""; start(); }
+};
+$("pw").onkeydown = e => { if (e.key == "Enter") $("go").click(); };
+$("out").onclick = async () => { await sb.auth.signOut(); start(); };
+$("plan").onchange = () => loadPlan($("plan").value);
+["hide", "vonly", "list"].forEach(i => $(i).onchange = apply);
+$("ics").onclick = downloadICS;
+start();
+</script></body></html>

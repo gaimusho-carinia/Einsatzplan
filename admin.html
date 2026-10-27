@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin – Deutschkurs-Plan</title><link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script></head><body>
+<div id="login" class="box" hidden>
+  <h1>Admin</h1>
+  <input type="email" id="em" placeholder="E-Mail" autocomplete="username">
+  <input type="password" id="pw" placeholder="Passwort" autocomplete="current-password">
+  <button class="btn" id="go">Anmelden</button><div class="err" id="err"></div>
+</div>
+<div id="app" hidden style="max-width:760px;margin:auto">
+  <h1>Pläne verwalten</h1>
+  <p><a href="index.html">← zur Planansicht</a> · <a href="sample/plan_2027_jan_feb.csv" download>CSV-Vorlage (aktueller Plan)</a>
+  · <button class="btn ghost" id="out">Abmelden</button></p>
+  <h2 style="font-size:16px">Neuen Plan hochladen</h2>
+  <p style="color:var(--mut);font-size:13px">CSV mit den Spalten <code>datum;teil;kurs;name;vertretung;notiz</code>.
+  teil = ganztag / vormittag / nachmittag, vertretung = ja / nein. Feiertage: Zeile mit datum und notiz, ohne Kurs und Name. Excel: „Speichern unter → CSV".</p>
+  <div style="display:grid;gap:8px">
+    <input type="text" id="pname" placeholder="Name des Plans, z. B. Jan–Feb 2027">
+    <input type="file" id="file" accept=".csv,text/csv">
+    <button class="btn" id="up">Hochladen</button><div class="err" id="msg"></div>
+  </div>
+  <h2 style="font-size:16px">Vorhandene Pläne</h2>
+  <table class="adm" id="tbl" style="min-width:0"></table>
+</div>
+<script src="lib.js"></script>
+<script>
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  $("login").hidden = !!session; $("app").hidden = !session;
+  if (!session) return;
+  const { data: me } = await sb.from("admins").select("user_id").maybeSingle();
+  if (!me) { $("app").innerHTML = "<p>Dieses Konto hat keine Admin-Rechte.</p><button class='btn ghost' onclick='sb.auth.signOut().then(()=>location.reload())'>Abmelden</button>"; return; }
+  const { data: plans } = await sb.from("plans").select("*").order("created_at", { ascending: false });
+  $("tbl").innerHTML = "<tr><th>Plan</th><th>Angelegt</th><th></th></tr>" + (plans || []).map(p =>
+    `<tr><td>${p.name}</td><td>${p.created_at.slice(0, 10)}</td><td><button class="btn ghost" data-id="${p.id}">Löschen</button></td></tr>`).join("");
+  $("tbl").querySelectorAll("button").forEach(b => b.onclick = async () => {
+    if (!confirm("Plan wirklich löschen?")) return;
+    await sb.from("plans").delete().eq("id", b.dataset.id); start(); });
+}
+$("up").onclick = async () => {
+  const msg = $("msg"); msg.textContent = "";
+  try {
+    const f = $("file").files[0], name = $("pname").value.trim();
+    if (!f || !name) throw new Error("Bitte Name und CSV-Datei angeben.");
+    const rows = parseCSV(await f.text()), entries = [], notes = [];
+    rows.forEach((r, i) => {
+      const datum = normDate(r.datum);
+      if (r.notiz) { notes.push({ datum, notiz: r.notiz }); return; }
+      if (!["ganztag", "vormittag", "nachmittag"].includes(r.teil)) throw new Error(`Zeile ${i + 2}: teil muss ganztag, vormittag oder nachmittag sein.`);
+      if (!r.kurs || !r.name) throw new Error(`Zeile ${i + 2}: kurs und name fehlen.`);
+      entries.push({ datum, teil: r.teil, kurs: r.kurs, name: clean(r.name), vertretung: /^(ja|1|true|x)$/i.test(r.vertretung) || r.name.startsWith("*") });
+    });
+    const { data: p, error } = await sb.from("plans").insert({ name }).select().single();
+    if (error) throw error;
+    const a = await sb.from("entries").insert(entries.map(e => ({ ...e, plan_id: p.id })));
+    const b = notes.length ? await sb.from("day_notes").insert(notes.map(n => ({ ...n, plan_id: p.id }))) : {};
+    if (a.error || b.error) { await sb.from("plans").delete().eq("id", p.id); throw a.error || b.error; }
+    msg.style.color = "inherit"; msg.textContent = `Fertig: ${entries.length} Einträge, ${notes.length} Hinweise.`; start();
+  } catch (e) { msg.style.color = ""; msg.textContent = e.message; }
+};
+$("go").onclick = async () => {
+  const { error } = await sb.auth.signInWithPassword({ email: $("em").value, password: $("pw").value });
+  if (error) $("err").textContent = "Anmeldung fehlgeschlagen."; else start();
+};
+$("out").onclick = async () => { await sb.auth.signOut(); start(); };
+start();
+</script></body></html>
