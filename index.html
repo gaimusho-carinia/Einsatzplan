@@ -63,6 +63,8 @@ function render() {
   const dates = [...E.map(x => x.datum), ...Object.keys(N)].sort();
   $("cal").innerHTML = ""; if (!dates.length) return;
   const by = {}; E.forEach(x => ((by[x.datum] ??= {})[x.teil] ??= {})[x.kurs] = x);
+  const GP = [1, 1, 1, 1, 1];
+  Object.keys(by).forEach(d => { const t = new Set(Object.keys(by[d]).map(x => x === "ganztag" ? "vormittag" : x)); if (t.size > 1) GP[(parse(d).getDay() + 6) % 7] = 2; });
   let m = parse(dates[0]); m.setDate(m.getDate() - ((m.getDay() + 6) % 7));
   const last = parse(dates.at(-1));
   for (; m <= last; m.setDate(m.getDate() + 7)) {
@@ -71,17 +73,17 @@ function render() {
       return t.includes("vormittag") && t.includes("nachmittag") ? ["vormittag", "nachmittag"] : [t[0] || "vormittag"]; });
     const LB = { vormittag: "Vormittag", nachmittag: "Nachmittag" };
     let h = "<tr><th></th>", h2 = "<tr><th></th>";
-    days.forEach((d, i) => { h += `<th colspan="${P[i].length}">${WD[i]}<small>${label(d)}</small></th>`;
-      h2 += by[d] ? P[i].map(p => `<th><small>${LB[p]}</small></th>`).join("") : "<th></th>"; });
+    days.forEach((d, i) => { h += `<th colspan="${GP[i]}">${WD[i]}<small>${label(d)}</small></th>`;
+      h2 += by[d] ? P[i].map(p => `<th colspan="${P[i].length < GP[i] ? GP[i] : 1}"><small>${LB[p]}</small></th>`).join("") : `<th colspan="${GP[i]}"></th>`; });
     h2 += "</tr>";
     const t = document.createElement("table"); t.innerHTML = h + "</tr>" + h2;
     KURSE.forEach((k, ki) => {
       const tr = document.createElement("tr"); tr.innerHTML = `<td class="k">${k}</td>`;
       days.forEach((d, i) => {
         const parts = P[i];
-        if (N[d]) { if (!ki) { const td = document.createElement("td"); td.className = "note"; td.rowSpan = KURSE.length; td.colSpan = parts.length; td.textContent = N[d]; tr.append(td); } return; }
+        if (N[d]) { if (!ki) { const td = document.createElement("td"); td.className = "note"; td.rowSpan = KURSE.length; td.colSpan = GP[i]; td.textContent = N[d]; tr.append(td); } return; }
         parts.forEach((p, pi) => { const x = by[d]?.[p]?.[k] || (p === "vormittag" ? by[d]?.ganztag?.[k] : null); const td = document.createElement("td");
-          td.className = "n " + (x?.vertretung ? "vt" : "reg") + (pi ? " pm" : ""); td.dataset.name = x?.name || "";
+          td.className = "n " + (x?.vertretung ? "vt" : "reg") + (pi ? " pm" : ""); if (parts.length < GP[i]) td.colSpan = GP[i]; td.dataset.name = x?.name || "";
           if (x) { td.textContent = x.name; if (x.vertretung) td.insertAdjacentHTML("beforeend", '<span class="v">V</span>'); }
           tr.append(td); });
       });
