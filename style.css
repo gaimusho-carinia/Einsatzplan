@@ -29,3 +29,4 @@ body.f td.hit{opacity:1;background:var(--hit);color:var(--hitfg);font-weight:700
 body.f.vonly td.hit.reg{opacity:.18;background:none;color:inherit;font-weight:400}
 body.f.vonly.hide td.hit.reg{visibility:hidden}
 table.adm td,table.adm th{height:auto;text-align:left}
+[hidden]{display:none!important}
