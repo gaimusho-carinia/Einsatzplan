@@ -4,7 +4,7 @@ const CONFIG = {
   READER_EMAIL: "sabishiran@gmail.com",   // gemeinsames Lese-Konto (siehe README)
   // Zeiten für den Kalender-Export (bitte anpassen). Ganze Tage werden als ganztägiger Termin exportiert.
   TIMES: {
-  ganztag:    ["09:30", "16:25"],   // Tage ohne Vormittag/Nachmittag-Teilung
+  ganztag:    ["09:30", "12:25"],   // Tage ohne Vormittag/Nachmittag-Teilung
   vormittag:  ["09:30", "12:25"],
   nachmittag: ["13:30", "16:25"]
 },
