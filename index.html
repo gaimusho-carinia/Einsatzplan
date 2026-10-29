@@ -3,6 +3,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Deutschkurs-Plan</title><link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="config.js"></script></head><body>
 <div id="login" class="box" hidden>
   <h1>Deutschkurs-Plan</h1>
@@ -11,16 +12,18 @@
 </div>
 <div id="app" hidden>
   <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-    <h1 style="margin:0">Deutschkurs-Plan</h1><select id="plan"></select>
-    <button class="btn ghost" id="out" style="margin-left:auto">Abmelden</button>
+    <h1 style="margin:0">Deutschkurs-Plan</h1><select id="plan" class="noprint"></select><span id="ptitle" class="onlyprint"></span>
+    <button class="btn ghost noprint" id="out" style="margin-left:auto">Abmelden</button>
   </div>
-  <div class="bar">
+  <div class="bar noprint">
     <div class="chips" id="chips"></div>
     <div class="opts">
       <label><input type="checkbox" id="hide"> Andere ausblenden</label>
       <label><input type="checkbox" id="vonly"> Nur Vertretungen</label>
       <label><input type="checkbox" id="list"> Einsatzliste unten anzeigen</label>
       <button class="btn" id="ics" disabled>In Kalender übernehmen (.ics)</button>
+      <button class="btn ghost" id="pdf">Als PDF speichern / drucken</button>
+      <button class="btn ghost" id="xls">Als Excel herunterladen</button>
     </div>
   </div>
   <div id="cal"></div><div id="sum"></div>
@@ -84,7 +87,7 @@ function render() {
         if (N[d]) { if (!ki) { const td = document.createElement("td"); td.className = "note"; td.rowSpan = KURSE.length; td.colSpan = GP[i]; td.textContent = N[d]; tr.append(td); } return; }
         parts.forEach((p, pi) => { const x = by[d]?.[p]?.[k] || (p === "vormittag" ? by[d]?.ganztag?.[k] : null); const td = document.createElement("td");
           td.className = "n " + (x?.vertretung ? "vt" : "reg") + (pi ? " pm" : ""); if (parts.length < GP[i]) td.colSpan = GP[i]; td.dataset.name = x?.name || "";
-          if (x) { td.textContent = x.name; if (x.vertretung) td.insertAdjacentHTML("beforeend", '<span class="v">V</span>'); }
+          if (x) { td.textContent = x.name; if (x.hinweis) { const hn = document.createElement("small"); hn.className = "hn"; hn.textContent = "(" + x.hinweis + ")"; td.append(hn); } if (x.vertretung) td.insertAdjacentHTML("beforeend", '<span class="v">V</span>'); }
           tr.append(td); });
       });
       t.append(tr);
@@ -97,6 +100,7 @@ function items() {
   return $("vonly").checked ? it.filter(x => x.vertretung) : it;
 }
 function apply() {
+  $("ptitle").textContent = planName + (sel ? " · " + sel : "");
   document.body.classList.toggle("f", !!sel);
   document.body.classList.toggle("hide", $("hide").checked);
   document.body.classList.toggle("vonly", $("vonly").checked);
@@ -108,7 +112,7 @@ function apply() {
   const it = items(), nv = it.filter(x => x.vertretung).length;
   s.style.display = "block";
   s.innerHTML = `<b>${sel}</b>: ${it.length} Einsätze${$("vonly").checked ? "" : `, davon ${nv} Vertretung${nv == 1 ? "" : "en"}`}<ul>` +
-    it.map(x => `<li>${WD[(parse(x.datum).getDay() + 6) % 7].slice(0, 2)} ${label(x.datum)} ${TEIL[x.teil]} · Kurs ${x.kurs}${x.vertretung ? " · <b>Vertretung</b>" : ""}</li>`).join("") + "</ul>";
+    it.map(x => `<li>${WD[(parse(x.datum).getDay() + 6) % 7].slice(0, 2)} ${label(x.datum)} ${TEIL[x.teil]} · Kurs ${x.kurs}${x.vertretung ? " · <b>Vertretung</b>" : ""}${x.hinweis ? " · " + x.hinweis : ""}</li>`).join("") + "</ul>";
 }
 function downloadICS() {
   const esc = s => s.replace(/[\\;,]/g, "\\$&"), stamp = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z";
@@ -119,11 +123,64 @@ function downloadICS() {
     if (t) L.push(`DTSTART:${d}T${t[0].replace(":", "")}00`, `DTEND:${d}T${t[1].replace(":", "")}00`);
     else { const n = parse(x.datum); n.setDate(n.getDate() + 1); L.push(`DTSTART;VALUE=DATE:${d}`, `DTEND;VALUE=DATE:${iso(n).replace(/-/g, "")}`); }
     L.push(`SUMMARY:${esc(`${CONFIG.TITLE} ${x.kurs}${x.vertretung ? " (Vertretung)" : ""}`)}`,
-      `DESCRIPTION:${esc(`${planName} · ${x.name}`)}`, "END:VEVENT");
+      `DESCRIPTION:${esc(`${planName} · ${x.name}${x.hinweis ? " · " + x.hinweis : ""}`)}`, "END:VEVENT");
   });
   L.push("END:VCALENDAR");
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([L.join("\r\n")], { type: "text/calendar" }));
   a.download = `Deutschkurs_${sel}.ics`; a.click();
+}
+
+function model() {
+  const dates = [...E.map(x => x.datum), ...Object.keys(N)].sort(), by = {}, weeks = [], GP = [1, 1, 1, 1, 1];
+  E.forEach(x => ((by[x.datum] ??= {})[x.teil] ??= {})[x.kurs] = x);
+  Object.keys(by).forEach(d => { const t = new Set(Object.keys(by[d]).map(x => x === "ganztag" ? "vormittag" : x)); if (t.size > 1) GP[(parse(d).getDay() + 6) % 7] = 2; });
+  if (dates.length) { const m = parse(dates[0]); m.setDate(m.getDate() - ((m.getDay() + 6) % 7)); const last = parse(dates.at(-1));
+    for (; m <= last; m.setDate(m.getDate() + 7)) weeks.push([...Array(5)].map((_, i) => { const d = new Date(m); d.setDate(d.getDate() + i); return iso(d); })); }
+  return { by, GP, weeks };
+}
+async function downloadXLSX() {
+  const { by, GP, weeks } = model(), dim = sel && $("hide").checked;
+  const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet("Plan");
+  ws.getColumn(1).width = 10; for (let c = 2; c <= GP.reduce((a, b) => a + b, 0) + 1; c++) ws.getColumn(c).width = 18;
+  const fill = rgb => ({ type: "pattern", pattern: "solid", fgColor: { argb: "FF" + rgb } });
+  const bd = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+  const st = (cell, o = {}) => { cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true }; cell.border = bd;
+    if (o.fill) cell.fill = fill(o.fill); cell.font = { name: "Arial", size: 10, bold: !!o.bold, color: { argb: "FF" + (o.color || "000000") } }; };
+  ws.getCell(1, 1).value = planName + (sel ? " – " + sel : ""); ws.getCell(1, 1).font = { name: "Arial", size: 14, bold: true };
+  let r = 3;
+  weeks.forEach(days => {
+    const merges = [], start = []; let c = 2; days.forEach((d, i) => { start.push(c); c += GP[i]; });
+    ws.getRow(r).height = 32;
+    st(ws.getCell(r, 1), { fill: "E8EEFB" }); st(ws.getCell(r + 1, 1), { fill: "E8EEFB" });
+    KURSE.forEach((k, ki) => { const cell = ws.getCell(r + 2 + ki, 1); cell.value = k; st(cell, { fill: "E8EEFB", bold: true }); });
+    days.forEach((d, i) => {
+      const c0 = start[i], span = GP[i], t = new Set(Object.keys(by[d] || {}).map(x => x === "ganztag" ? "vormittag" : x));
+      const parts = t.has("vormittag") && t.has("nachmittag") ? ["vormittag", "nachmittag"] : [[...t][0] || "vormittag"];
+      for (let k = 0; k < span; k++) { st(ws.getCell(r, c0 + k), { fill: "E8EEFB", bold: true }); st(ws.getCell(r + 1, c0 + k), { fill: "E8EEFB", color: "555555" }); }
+      ws.getCell(r, c0).value = `${WD[i]}\n${label(d)}`; if (span > 1) merges.push([r, c0, r, c0 + span - 1]);
+      if (by[d]) { parts.forEach((p, pi) => ws.getCell(r + 1, c0 + pi).value = p === "nachmittag" ? "Nachmittag" : "Vormittag"); if (parts.length < span) merges.push([r + 1, c0, r + 1, c0 + span - 1]); }
+      KURSE.forEach((k, ki) => {
+        const row = r + 2 + ki;
+        if (N[d]) { for (let q = 0; q < span; q++) st(ws.getCell(row, c0 + q), { fill: "D4D4D8", bold: true });
+          if (!ki) { ws.getCell(row, c0).value = N[d]; merges.push([row, c0, row + KURSE.length - 1, c0 + span - 1]); } return; }
+        parts.forEach((p, pi) => {
+          const x = by[d]?.[p]?.[k] || (p === "vormittag" ? by[d]?.ganztag?.[k] : null), mine = x && x.name === sel, hid = x && dim && !mine;
+          const o = !x || hid ? {} : mine ? { fill: "2563EB", color: "FFFFFF", bold: true } : x.vertretung ? { fill: "FFF3A8" } : {};
+          const wide = parts.length < span, last = wide ? span - 1 : 0;
+          for (let q = pi; q <= pi + last; q++) st(ws.getCell(row, c0 + q), o);
+          if (x && !hid) ws.getCell(row, c0 + pi).value = x.name + (x.hinweis ? ` (${x.hinweis})` : "") + (x.vertretung ? " (V)" : "");
+          if (wide && by[d]) merges.push([row, c0, row, c0 + span - 1]);
+        });
+      });
+    });
+    merges.forEach(m => ws.mergeCells(...m));
+    r += KURSE.length + 3;
+  });
+  ws.pageSetup = { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
+  const buf = await wb.xlsx.writeBuffer();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+  a.download = `Deutschkurs_${(sel || planName).replace(/[^\wäöüÄÖÜß-]+/g, "_")}.xlsx`; a.click();
 }
 $("go").onclick = async () => {
   const { error } = await sb.auth.signInWithPassword({ email: CONFIG.READER_EMAIL, password: $("pw").value });
@@ -134,5 +191,7 @@ $("out").onclick = async () => { await sb.auth.signOut(); start(); };
 $("plan").onchange = () => loadPlan($("plan").value);
 ["hide", "vonly", "list"].forEach(i => $(i).onchange = apply);
 $("ics").onclick = downloadICS;
+$("pdf").onclick = () => window.print();
+$("xls").onclick = downloadXLSX;
 start();
 </script></body></html>

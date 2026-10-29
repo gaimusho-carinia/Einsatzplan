@@ -33,3 +33,15 @@ table.adm td,table.adm th{height:auto;text-align:left}
 [hidden]{display:none!important}
 
 table th:first-child{width:80px}
+.hn{font-size:11px;opacity:.85;margin-left:4px}
+.onlyprint{display:none}
+@media print{
+  :root{--bg:#fff;--fg:#1c1c1e;--mut:#555;--line:#999;--head:#e8eefb;--sub:#fff3a8;--hol:#d4d4d8;--hit:#2563eb;--hitfg:#fff;--chip:#f1f3f7}
+  @page{size:A4 landscape;margin:8mm}
+  body{padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .noprint{display:none!important} .onlyprint{display:inline;font-weight:600;margin-left:8px}
+  h1{font-size:15px;margin:0 0 4px}
+  .wrap{overflow:visible;margin:5px 0;break-inside:avoid}
+  table{min-width:0} th,td{height:auto;padding:2px;font-size:10px} .legend{font-size:9px;margin:2px 0}
+  #sum{display:none!important}
+}
