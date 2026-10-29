@@ -21,7 +21,10 @@ table{border-collapse:collapse;width:100%;min-width:680px;table-layout:fixed}
 th,td{border:1px solid var(--line);padding:5px 4px;text-align:center;font-size:14px;height:30px}
 th{background:var(--head)} th small{display:block;font-weight:400;color:var(--mut);font-size:11px}
 td.k{background:var(--head);font-weight:600;width:64px}
-td.vt{background:var(--sub)} td.pm{border-left:2px dashed var(--line)}
+td.vt{background:var(--sub)}
+td.pt{background:var(--head);font-weight:600;font-size:12px}
+td.nu{background:var(--chip)}
+tr.bandstart td{border-top:3px solid var(--mut)}
 td.note{background:var(--hol);font-weight:600}
 td .v{font-size:10px;opacity:.7;margin-left:3px}
 body.f td.n{opacity:.18} body.f.hide td.n{visibility:hidden}
@@ -32,7 +35,6 @@ body.f.vonly.hide td.hit.reg{visibility:hidden}
 table.adm td,table.adm th{height:auto;text-align:left}
 [hidden]{display:none!important}
 
-table th:first-child{width:80px}
 .hn{font-size:11px;opacity:.85;margin-left:4px}
 .onlyprint{display:none}
 @media print{

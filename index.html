@@ -62,38 +62,40 @@ async function loadPlan(id) {
     $("chips").append(b); });
   render(); apply();
 }
+const LB = { vormittag: "Vormittag", nachmittag: "Nachmittag" };
+function model() {
+  const dates = [...E.map(x => x.datum), ...Object.keys(N)].sort(), by = {}, weeks = [];
+  E.forEach(x => ((by[x.datum] ??= {})[x.teil] ??= {})[x.kurs] = x);
+  if (dates.length) { const m = parse(dates[0]); m.setDate(m.getDate() - ((m.getDay() + 6) % 7)); const last = parse(dates.at(-1));
+    for (; m <= last; m.setDate(m.getDate() + 7)) weeks.push([...Array(5)].map((_, i) => { const d = new Date(m); d.setDate(d.getDate() + i); return iso(d); })); }
+  return { by, weeks };
+}
+const getX = (by, d, p, k) => by[d]?.[p]?.[k] || (p === "vormittag" ? by[d]?.ganztag?.[k] : null);
 function render() {
-  const dates = [...E.map(x => x.datum), ...Object.keys(N)].sort();
-  $("cal").innerHTML = ""; if (!dates.length) return;
-  const by = {}; E.forEach(x => ((by[x.datum] ??= {})[x.teil] ??= {})[x.kurs] = x);
-  const GP = [1, 1, 1, 1, 1];
-  Object.keys(by).forEach(d => { const t = new Set(Object.keys(by[d]).map(x => x === "ganztag" ? "vormittag" : x)); if (t.size > 1) GP[(parse(d).getDay() + 6) % 7] = 2; });
-  let m = parse(dates[0]); m.setDate(m.getDate() - ((m.getDay() + 6) % 7));
-  const last = parse(dates.at(-1));
-  for (; m <= last; m.setDate(m.getDate() + 7)) {
-    const days = [...Array(5)].map((_, i) => { const d = new Date(m); d.setDate(d.getDate() + i); return iso(d); });
-    const P = days.map(d => { const t = Object.keys(by[d] || {}).map(x => x === "ganztag" ? "vormittag" : x);
-      return t.includes("vormittag") && t.includes("nachmittag") ? ["vormittag", "nachmittag"] : [t[0] || "vormittag"]; });
-    const LB = { vormittag: "Vormittag", nachmittag: "Nachmittag" };
-    let h = "<tr><th></th>", h2 = "<tr><th></th>";
-    days.forEach((d, i) => { h += `<th colspan="${GP[i]}">${WD[i]}<small>${label(d)}</small></th>`;
-      h2 += by[d] ? P[i].map(p => `<th colspan="${P[i].length < GP[i] ? GP[i] : 1}"><small>${LB[p]}</small></th>`).join("") : `<th colspan="${GP[i]}"></th>`; });
-    h2 += "</tr>";
-    const t = document.createElement("table"); t.innerHTML = h + "</tr>" + h2;
-    KURSE.forEach((k, ki) => {
-      const tr = document.createElement("tr"); tr.innerHTML = `<td class="k">${k}</td>`;
-      days.forEach((d, i) => {
-        const parts = P[i];
-        if (N[d]) { if (!ki) { const td = document.createElement("td"); td.className = "note"; td.rowSpan = KURSE.length; td.colSpan = GP[i]; td.textContent = N[d]; tr.append(td); } return; }
-        parts.forEach((p, pi) => { const x = by[d]?.[p]?.[k] || (p === "vormittag" ? by[d]?.ganztag?.[k] : null); const td = document.createElement("td");
-          td.className = "n " + (x?.vertretung ? "vt" : "reg") + (pi ? " pm" : ""); if (parts.length < GP[i]) td.colSpan = GP[i]; td.dataset.name = x?.name || "";
-          if (x) { td.textContent = x.name; if (x.hinweis) { const hn = document.createElement("small"); hn.className = "hn"; hn.textContent = "(" + x.hinweis + ")"; td.append(hn); } if (x.vertretung) td.insertAdjacentHTML("beforeend", '<span class="v">V</span>'); }
-          tr.append(td); });
+  const { by, weeks } = model();
+  $("cal").innerHTML = "";
+  weeks.forEach(days => {
+    const bands = ["vormittag"]; if (days.some(d => by[d]?.nachmittag)) bands.push("nachmittag");
+    const nr = bands.length * KURSE.length, t = document.createElement("table");
+    t.innerHTML = '<colgroup><col style="width:88px"><col style="width:56px"></colgroup><tr><th colspan="2"></th>' +
+      days.map((d, i) => `<th>${WD[i]}<small>${label(d)}</small></th>`).join("") + "</tr>";
+    bands.forEach((p, bi) => KURSE.forEach((k, ki) => {
+      const tr = document.createElement("tr"); if (bi && !ki) tr.className = "bandstart";
+      if (!ki) tr.innerHTML = `<td class="pt" rowspan="${KURSE.length}">${LB[p]}</td>`;
+      tr.insertAdjacentHTML("beforeend", `<td class="k">${k}</td>`);
+      days.forEach(d => {
+        if (N[d]) { if (!bi && !ki) { const td = document.createElement("td"); td.className = "note"; td.rowSpan = nr; td.textContent = N[d]; tr.append(td); } return; }
+        const x = getX(by, d, p, k), td = document.createElement("td");
+        if (!x) { td.className = bi ? "nu" : ""; tr.append(td); return; }
+        td.className = "n " + (x.vertretung ? "vt" : "reg"); td.dataset.name = x.name; td.textContent = x.name;
+        if (x.hinweis) { const hn = document.createElement("small"); hn.className = "hn"; hn.textContent = "(" + x.hinweis + ")"; td.append(hn); }
+        if (x.vertretung) td.insertAdjacentHTML("beforeend", '<span class="v">V</span>');
+        tr.append(td);
       });
       t.append(tr);
-    });
+    }));
     const w = document.createElement("div"); w.className = "wrap"; w.append(t); $("cal").append(w);
-  }
+  });
 }
 function items() {
   let it = E.filter(x => x.name === sel).sort((a, b) => a.datum.localeCompare(b.datum) || a.teil.localeCompare(b.teil));
@@ -130,18 +132,10 @@ function downloadICS() {
   a.download = `Deutschkurs_${sel}.ics`; a.click();
 }
 
-function model() {
-  const dates = [...E.map(x => x.datum), ...Object.keys(N)].sort(), by = {}, weeks = [], GP = [1, 1, 1, 1, 1];
-  E.forEach(x => ((by[x.datum] ??= {})[x.teil] ??= {})[x.kurs] = x);
-  Object.keys(by).forEach(d => { const t = new Set(Object.keys(by[d]).map(x => x === "ganztag" ? "vormittag" : x)); if (t.size > 1) GP[(parse(d).getDay() + 6) % 7] = 2; });
-  if (dates.length) { const m = parse(dates[0]); m.setDate(m.getDate() - ((m.getDay() + 6) % 7)); const last = parse(dates.at(-1));
-    for (; m <= last; m.setDate(m.getDate() + 7)) weeks.push([...Array(5)].map((_, i) => { const d = new Date(m); d.setDate(d.getDate() + i); return iso(d); })); }
-  return { by, GP, weeks };
-}
 async function downloadXLSX() {
-  const { by, GP, weeks } = model(), dim = sel && $("hide").checked;
+  const { by, weeks } = model(), dim = sel && $("hide").checked, n = KURSE.length;
   const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet("Plan");
-  ws.getColumn(1).width = 10; for (let c = 2; c <= GP.reduce((a, b) => a + b, 0) + 1; c++) ws.getColumn(c).width = 18;
+  ws.getColumn(1).width = 13; ws.getColumn(2).width = 8; for (let c = 3; c <= 7; c++) ws.getColumn(c).width = 20;
   const fill = rgb => ({ type: "pattern", pattern: "solid", fgColor: { argb: "FF" + rgb } });
   const bd = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
   const st = (cell, o = {}) => { cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true }; cell.border = bd;
@@ -149,36 +143,30 @@ async function downloadXLSX() {
   ws.getCell(1, 1).value = planName + (sel ? " – " + sel : ""); ws.getCell(1, 1).font = { name: "Arial", size: 14, bold: true };
   let r = 3;
   weeks.forEach(days => {
-    const merges = [], start = []; let c = 2; days.forEach((d, i) => { start.push(c); c += GP[i]; });
-    ws.getRow(r).height = 32;
-    st(ws.getCell(r, 1), { fill: "E8EEFB" }); st(ws.getCell(r + 1, 1), { fill: "E8EEFB" });
-    KURSE.forEach((k, ki) => { const cell = ws.getCell(r + 2 + ki, 1); cell.value = k; st(cell, { fill: "E8EEFB", bold: true }); });
-    days.forEach((d, i) => {
-      const c0 = start[i], span = GP[i], t = new Set(Object.keys(by[d] || {}).map(x => x === "ganztag" ? "vormittag" : x));
-      const parts = t.has("vormittag") && t.has("nachmittag") ? ["vormittag", "nachmittag"] : [[...t][0] || "vormittag"];
-      for (let k = 0; k < span; k++) { st(ws.getCell(r, c0 + k), { fill: "E8EEFB", bold: true }); st(ws.getCell(r + 1, c0 + k), { fill: "E8EEFB", color: "555555" }); }
-      ws.getCell(r, c0).value = `${WD[i]}\n${label(d)}`; if (span > 1) merges.push([r, c0, r, c0 + span - 1]);
-      if (by[d]) { parts.forEach((p, pi) => ws.getCell(r + 1, c0 + pi).value = p === "nachmittag" ? "Nachmittag" : "Vormittag"); if (parts.length < span) merges.push([r + 1, c0, r + 1, c0 + span - 1]); }
+    const bands = ["vormittag"]; if (days.some(d => by[d]?.nachmittag)) bands.push("nachmittag");
+    const nr = bands.length * n, merges = [];
+    ws.getRow(r).height = 32; st(ws.getCell(r, 1), { fill: "E8EEFB" }); st(ws.getCell(r, 2), { fill: "E8EEFB" });
+    days.forEach((d, i) => { const c = ws.getCell(r, 3 + i); c.value = `${WD[i]}\n${label(d)}`; st(c, { fill: "E8EEFB", bold: true }); });
+    bands.forEach((p, bi) => {
+      const r0 = r + 1 + bi * n;
+      for (let q = 0; q < n; q++) st(ws.getCell(r0 + q, 1), { fill: "E8EEFB", bold: true });
+      ws.getCell(r0, 1).value = LB[p]; if (n > 1) merges.push([r0, 1, r0 + n - 1, 1]);
       KURSE.forEach((k, ki) => {
-        const row = r + 2 + ki;
-        if (N[d]) { for (let q = 0; q < span; q++) st(ws.getCell(row, c0 + q), { fill: "D4D4D8", bold: true });
-          if (!ki) { ws.getCell(row, c0).value = N[d]; merges.push([row, c0, row + KURSE.length - 1, c0 + span - 1]); } return; }
-        parts.forEach((p, pi) => {
-          const x = by[d]?.[p]?.[k] || (p === "vormittag" ? by[d]?.ganztag?.[k] : null), mine = x && x.name === sel, hid = x && dim && !mine;
-          const o = !x || hid ? {} : mine ? { fill: "2563EB", color: "FFFFFF", bold: true } : x.vertretung ? { fill: "FFF3A8" } : {};
-          const wide = parts.length < span, last = wide ? span - 1 : 0;
-          for (let q = pi; q <= pi + last; q++) st(ws.getCell(row, c0 + q), o);
-          if (x && !hid) ws.getCell(row, c0 + pi).value = x.name + (x.hinweis ? ` (${x.hinweis})` : "") + (x.vertretung ? " (V)" : "");
-          if (wide && by[d]) merges.push([row, c0, row, c0 + span - 1]);
+        const row = r0 + ki; ws.getCell(row, 2).value = k; st(ws.getCell(row, 2), { fill: "E8EEFB", bold: true });
+        days.forEach((d, i) => {
+          const cell = ws.getCell(row, 3 + i);
+          if (N[d]) { st(cell, { fill: "D4D4D8", bold: true }); if (!bi && !ki) { cell.value = N[d]; if (nr > 1) merges.push([row, 3 + i, row + nr - 1, 3 + i]); } return; }
+          const x = getX(by, d, p, k), mine = x && x.name === sel, hid = x && dim && !mine;
+          st(cell, !x ? (bi ? { fill: "F1F3F7" } : {}) : hid ? {} : mine ? { fill: "2563EB", color: "FFFFFF", bold: true } : x.vertretung ? { fill: "FFF3A8" } : {});
+          if (x && !hid) cell.value = x.name + (x.hinweis ? ` (${x.hinweis})` : "") + (x.vertretung ? " (V)" : "");
         });
       });
     });
     merges.forEach(m => ws.mergeCells(...m));
-    r += KURSE.length + 3;
+    r += nr + 2;
   });
   ws.pageSetup = { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
-  const buf = await wb.xlsx.writeBuffer();
-  const a = document.createElement("a");
+  const buf = await wb.xlsx.writeBuffer(), a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   a.download = `Deutschkurs_${(sel || planName).replace(/[^\wäöüÄÖÜß-]+/g, "_")}.xlsx`; a.click();
 }
