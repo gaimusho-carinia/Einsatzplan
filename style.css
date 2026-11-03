@@ -47,3 +47,6 @@ table.adm td,table.adm th{height:auto;text-align:left}
   table{min-width:0} th,td{height:auto;padding:2px;font-size:10px} .legend{font-size:9px;margin:2px 0}
   #sum{display:none!important}
 }
+.ja{font-size:.75em;font-weight:400;opacity:.85;margin-left:3px;font-family:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic","Noto Sans JP",Meiryo,sans-serif}
+td.pt .ja,td.note .ja{margin-left:0}
+.v .ja{font-size:1em;margin-left:1px}
