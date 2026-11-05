@@ -15,7 +15,7 @@
   <p><a href="index.html">← zur Planansicht</a> · <a href="sample/plan_2027_jan_feb.csv" download>CSV-Vorlage (aktueller Plan)</a>
   · <button class="btn ghost" id="out">Abmelden</button></p>
   <h2 style="font-size:16px">Neuen Plan hochladen</h2>
-  <p style="color:var(--mut);font-size:13px">CSV mit den Spalten <code>datum;teil;kurs;name;vertretung;notiz</code>.
+  <p style="color:var(--mut);font-size:13px">CSV mit den Spalten <code>datum;teil;kurs;name;vertretung;notiz</code> (optional: <code>hinweis</code>, z. B. „ab 9 Uhr").
   teil = ganztag / vormittag / nachmittag, vertretung = ja / nein. Feiertage: Zeile mit datum und notiz, ohne Kurs und Name. Excel: „Speichern unter → CSV".</p>
   <div style="display:grid;gap:8px">
     <input type="text" id="pname" placeholder="Name des Plans, z. B. Jan–Feb 2027">
@@ -34,11 +34,19 @@ async function start() {
   const { data: me } = await sb.from("admins").select("user_id").maybeSingle();
   if (!me) { $("app").innerHTML = "<p>Dieses Konto hat keine Admin-Rechte.</p><button class='btn ghost' onclick='sb.auth.signOut().then(()=>location.reload())'>Abmelden</button>"; return; }
   const { data: plans } = await sb.from("plans").select("*").order("created_at", { ascending: false });
-  $("tbl").innerHTML = "<tr><th>Plan</th><th>Angelegt</th><th></th></tr>" + (plans || []).map(p =>
-    `<tr><td>${p.name}</td><td>${p.created_at.slice(0, 10)}</td><td><button class="btn ghost" data-id="${p.id}">Löschen</button></td></tr>`).join("");
-  $("tbl").querySelectorAll("button").forEach(b => b.onclick = async () => {
+  const [{ data: conf }, { data: ents }] = await Promise.all([sb.from("confirmations").select("*"), sb.from("entries").select("plan_id,name").range(0, 4999)]);
+  const sortDe = (x, y) => x.localeCompare(y, "de");
+  $("tbl").innerHTML = "<tr><th>Plan</th><th>Angelegt</th><th>Bestätigung</th><th></th></tr>" + (plans || []).map(p => {
+    const ok = (conf || []).filter(c => c.plan_id === p.id), okNames = ok.map(c => c.name);
+    const open = [...new Set((ents || []).filter(e => e.plan_id === p.id).map(e => e.name))].filter(n => !okNames.includes(n)).sort(sortDe);
+    return `<tr><td>${p.name}</td><td>${p.created_at.slice(0, 10)}</td><td><b>Bestätigt:</b> ${ok.length ? ok.sort((x, y) => sortDe(x.name, y.name)).map(c => `${c.name} (${c.confirmed_at.slice(0, 10)})`).join(", ") : "–"}<br><b>Offen:</b> ${open.length ? open.join(", ") : "–"}</td>` +
+      `<td><button class="btn ghost" data-reset="${p.id}">Bestätigungen zurücksetzen</button> <button class="btn ghost" data-id="${p.id}">Löschen</button></td></tr>`; }).join("");
+  $("tbl").querySelectorAll("button[data-id]").forEach(b => b.onclick = async () => {
     if (!confirm("Plan wirklich löschen?")) return;
     await sb.from("plans").delete().eq("id", b.dataset.id); start(); });
+  $("tbl").querySelectorAll("button[data-reset]").forEach(b => b.onclick = async () => {
+    if (!confirm("Alle Bestätigungen für diesen Plan zurücksetzen?")) return;
+    await sb.from("confirmations").delete().eq("plan_id", b.dataset.reset); start(); });
 }
 $("up").onclick = async () => {
   const msg = $("msg"); msg.textContent = "";
@@ -51,7 +59,7 @@ $("up").onclick = async () => {
       if (r.notiz) { notes.push({ datum, notiz: r.notiz }); return; }
       if (!["ganztag", "vormittag", "nachmittag"].includes(r.teil)) throw new Error(`Zeile ${i + 2}: teil muss ganztag, vormittag oder nachmittag sein.`);
       if (!r.kurs || !r.name) throw new Error(`Zeile ${i + 2}: kurs und name fehlen.`);
-      entries.push({ datum, teil: r.teil, kurs: r.kurs, name: clean(r.name), vertretung: /^(ja|1|true|x)$/i.test(r.vertretung) || r.name.startsWith("*") });
+      entries.push({ datum, teil: r.teil, kurs: r.kurs, name: clean(r.name), vertretung: /^(ja|1|true|x)$/i.test(r.vertretung) || r.name.startsWith("*"), hinweis: r.hinweis || null });
     });
     const { data: p, error } = await sb.from("plans").insert({ name }).select().single();
     if (error) throw error;

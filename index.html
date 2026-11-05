@@ -25,6 +25,9 @@
       <button class="btn ghost" id="pdf">Als PDF speichern / drucken</button>
       <button class="btn ghost" id="xls">Als Excel herunterladen</button>
     </div>
+    <div class="opts" id="cbox" hidden>
+      <button class="btn" id="conf"></button><span id="cst"></span>
+    </div>
   </div>
   <div id="cal"></div><div id="sum"></div>
   <p style="color:var(--mut);font-size:12px">Gelb = Vertretung · Grau = Feiertag<br><span class="ja" style="font-size:11px;margin:0">黄 = 代講 · 灰 = 祝日</span></p>
@@ -37,7 +40,7 @@ const jaNote = t => /^Feiertag/.test(t) ? "祝日" : /^Abschlussfeier/.test(t) ?
 const jaHint = t => { const m = t.match(/^ab (\d{1,2})(?::(\d{2}))? Uhr$/); return m ? `${m[1]}時${m[2] ? m[2] + "分" : ""}から` : ""; };
 const jaSpan = t => { const s = document.createElement("span"); s.className = "ja"; s.textContent = t; return s; };
 const TEIL = { ganztag: "", vormittag: "vormittags", nachmittag: "nachmittags" };
-let E = [], N = {}, KURSE = [], sel = null, planName = "";
+let E = [], N = {}, KURSE = [], sel = null, planName = "", planId = null, CONF = {};
 const iso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 const parse = s => { const [y,m,d] = s.split("-").map(Number); return new Date(y, m-1, d); };
 const label = s => `${s.slice(8)}.${s.slice(5,7)}.`;
@@ -53,15 +56,16 @@ async function start() {
 }
 async function loadPlan(id) {
   planName = $("plan").selectedOptions[0].textContent;
-  const [e, n] = await Promise.all([
+  const [e, n, cf] = await Promise.all([
     sb.from("entries").select("*").eq("plan_id", id).range(0, 4999),
-    sb.from("day_notes").select("*").eq("plan_id", id)]);
-  E = e.data || []; N = Object.fromEntries((n.data || []).map(x => [x.datum, x.notiz]));
+    sb.from("day_notes").select("*").eq("plan_id", id),
+    sb.from("confirmations").select("*").eq("plan_id", id)]);
+  planId = id; CONF = Object.fromEntries((cf.data || []).map(x => [x.name, x.confirmed_at])); E = e.data || []; N = Object.fromEntries((n.data || []).map(x => [x.datum, x.notiz]));
   KURSE = [...new Set(E.map(x => x.kurs))].sort();
   const names = [...new Set(E.map(x => x.name))].sort((a, b) => a.localeCompare(b, "de"));
   const saved = localStorage.getItem("dk_name"); sel = names.includes(saved) ? saved : null;
   $("chips").innerHTML = "";
-  names.forEach(n => { const b = document.createElement("button"); b.className = "chip"; b.textContent = n;
+  names.forEach(n => { const b = document.createElement("button"); b.className = "chip"; b.dataset.n = n; b.textContent = n;
     b.onclick = () => { sel = sel === n ? null : n; sel ? localStorage.setItem("dk_name", sel) : localStorage.removeItem("dk_name"); apply(); };
     $("chips").append(b); });
   render(); apply();
@@ -110,9 +114,12 @@ function apply() {
   document.body.classList.toggle("f", !!sel);
   document.body.classList.toggle("hide", $("hide").checked);
   document.body.classList.toggle("vonly", $("vonly").checked);
-  [...$("chips").children].forEach(b => b.setAttribute("aria-pressed", b.textContent === sel));
+  [...$("chips").children].forEach(b => { b.textContent = b.dataset.n + (CONF[b.dataset.n] ? " ✓" : ""); b.setAttribute("aria-pressed", b.dataset.n === sel); });
   document.querySelectorAll("td.n").forEach(td => td.classList.toggle("hit", !!sel && td.dataset.name === sel));
-  $("ics").disabled = !sel;
+  $("ics").disabled = !sel; $("cbox").hidden = !sel;
+  if (sel) { const c = CONF[sel];
+    $("cst").textContent = c ? `✓ Bestätigt am ${new Date(c).toLocaleDateString("de-DE")} · 確認済み` : "Noch nicht bestätigt · 未確認";
+    $("conf").textContent = c ? "Erneut bestätigen 再確認" : "Bestätigen 確認"; }
   const s = $("sum");
   if (!sel || !$("list").checked) { s.style.display = "none"; return; }
   const it = items(), nv = it.filter(x => x.vertretung).length;
@@ -186,5 +193,14 @@ $("plan").onchange = () => loadPlan($("plan").value);
 $("ics").onclick = downloadICS;
 $("pdf").onclick = () => window.print();
 $("xls").onclick = downloadXLSX;
+async function confirmPlan() {
+  if (!sel) return;
+  if (!confirm(`${sel}: Bist du sicher?\nPassen alle Daten und Tage?\nDann klicke auf OK.\n\n本当によろしいですか？\n日程・曜日はすべて合っていますか？\n問題なければ「OK」を押してください。`)) return;
+  const at = new Date().toISOString();
+  const { error } = await sb.from("confirmations").upsert({ plan_id: planId, name: sel, confirmed_at: at }, { onConflict: "plan_id,name" });
+  if (error) { alert("Das hat nicht geklappt: " + error.message); return; }
+  CONF[sel] = at; apply();
+}
+$("conf").onclick = confirmPlan;
 start();
 </script></body></html>
