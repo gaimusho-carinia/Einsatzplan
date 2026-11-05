@@ -128,7 +128,7 @@ function downloadICS() {
     L.push("BEGIN:VEVENT", `UID:${d}-${x.teil}-${x.kurs}-${x.name.replace(/\W/g, "")}@deutschkurs-plan`, `DTSTAMP:${stamp}`);
     if (t) L.push(`DTSTART:${d}T${t[0].replace(":", "")}00`, `DTEND:${d}T${t[1].replace(":", "")}00`);
     else { const n = parse(x.datum); n.setDate(n.getDate() + 1); L.push(`DTSTART;VALUE=DATE:${d}`, `DTEND;VALUE=DATE:${iso(n).replace(/-/g, "")}`); }
-    L.push(`SUMMARY:${esc(`${CONFIG.TITLE} ${x.kurs}${x.vertretung ? " (Vertretung)" : ""}`)}`,
+    L.push(`SUMMARY:${esc(`${CONFIG.TITLE ?? "Gaimusho"} ${x.kurs}${x.vertretung ? " (Vertretung)" : ""}`)}`,
       `DESCRIPTION:${esc(`${planName} · ${x.name}${x.hinweis ? " · " + x.hinweis : ""}`)}`, "END:VEVENT");
   });
   L.push("END:VCALENDAR");
