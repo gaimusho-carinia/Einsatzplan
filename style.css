@@ -50,3 +50,13 @@ table.adm td,table.adm th{height:auto;text-align:left}
 .ja{font-size:.75em;font-weight:400;opacity:.85;margin-left:3px;font-family:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic","Noto Sans JP",Meiryo,sans-serif}
 td.pt .ja,td.note .ja{margin-left:0}
 .v .ja{font-size:1em;margin-left:1px}
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--fg);padding:16px;max-width:92vw}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+textarea{width:100%;font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px}
+.rad{display:flex;gap:8px;align-items:center;cursor:pointer}
+.chip.ok{border-color:#16a34a;background:#dcfce7;color:#14532d}
+.chip.pb{border-color:#d97706;background:#fef3c7;color:#78350f}
+.chip.ok[aria-pressed=true]{background:#16a34a;border-color:#16a34a;color:#fff}
+.chip.pb[aria-pressed=true]{background:#d97706;border-color:#d97706;color:#fff}
+body.f.cok{--hit:#16a34a;--hitfg:#fff} body.f.cpb{--hit:#d97706;--hitfg:#fff}
+@media (prefers-color-scheme:dark){.chip.ok{background:#14532d;color:#dcfce7}.chip.pb{background:#78350f;color:#fef3c7}}

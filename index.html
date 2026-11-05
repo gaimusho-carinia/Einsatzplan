@@ -32,6 +32,17 @@
   <div id="cal"></div><div id="sum"></div>
   <p style="color:var(--mut);font-size:12px">Gelb = Vertretung · Grau = Feiertag<br><span class="ja" style="font-size:11px;margin:0">黄 = 代講 · 灰 = 祝日</span></p>
 </div>
+<dialog id="dlg">
+  <div style="display:grid;gap:10px;width:min(440px,84vw)">
+    <b id="dtitle" style="font-size:17px"></b>
+    <div>Bist du sicher? Passen alle Daten und Tage?<br><span class="ja" style="margin:0">本当によろしいですか？日程・曜日はすべて合っていますか？</span></div>
+    <label class="rad"><input type="radio" name="st" value="ok" checked> <span>Alles OK <span class="ja">問題なし</span></span></label>
+    <label class="rad"><input type="radio" name="st" value="problem"> <span>Nicht OK – etwas stimmt nicht <span class="ja">問題あり</span></span></label>
+    <div id="cm" hidden><textarea id="ctext" rows="3" placeholder="Was stimmt nicht? Bitte Tag und Kurs nennen. / どの日・クラスが違いますか？"></textarea></div>
+    <div class="err" id="derr"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn ghost" id="dcancel">Abbrechen</button><button class="btn" id="dok">OK</button></div>
+  </div>
+</dialog>
 <script src="lib.js"></script>
 <script>
 const WD = ["Montag","Dienstag","Mittwoch","Donnerstag","Freitag"];
@@ -60,7 +71,7 @@ async function loadPlan(id) {
     sb.from("entries").select("*").eq("plan_id", id).range(0, 4999),
     sb.from("day_notes").select("*").eq("plan_id", id),
     sb.from("confirmations").select("*").eq("plan_id", id)]);
-  planId = id; CONF = Object.fromEntries((cf.data || []).map(x => [x.name, x.confirmed_at])); E = e.data || []; N = Object.fromEntries((n.data || []).map(x => [x.datum, x.notiz]));
+  planId = id; CONF = Object.fromEntries((cf.data || []).map(x => [x.name, { at: x.confirmed_at, status: x.status || "ok", kommentar: x.kommentar || "" }])); E = e.data || []; N = Object.fromEntries((n.data || []).map(x => [x.datum, x.notiz]));
   KURSE = [...new Set(E.map(x => x.kurs))].sort();
   const names = [...new Set(E.map(x => x.name))].sort((a, b) => a.localeCompare(b, "de"));
   const saved = localStorage.getItem("dk_name"); sel = names.includes(saved) ? saved : null;
@@ -114,12 +125,17 @@ function apply() {
   document.body.classList.toggle("f", !!sel);
   document.body.classList.toggle("hide", $("hide").checked);
   document.body.classList.toggle("vonly", $("vonly").checked);
-  [...$("chips").children].forEach(b => { b.textContent = b.dataset.n + (CONF[b.dataset.n] ? " ✓" : ""); b.setAttribute("aria-pressed", b.dataset.n === sel); });
+  document.body.classList.toggle("cok", !!sel && CONF[sel]?.status === "ok");
+  document.body.classList.toggle("cpb", !!sel && CONF[sel]?.status === "problem");
+  [...$("chips").children].forEach(b => { const c = CONF[b.dataset.n];
+    b.textContent = b.dataset.n + (c ? (c.status === "problem" ? " ⚠" : " ✓") : "");
+    b.classList.toggle("ok", !!c && c.status !== "problem"); b.classList.toggle("pb", !!c && c.status === "problem");
+    b.setAttribute("aria-pressed", b.dataset.n === sel); });
   document.querySelectorAll("td.n").forEach(td => td.classList.toggle("hit", !!sel && td.dataset.name === sel));
   $("ics").disabled = !sel; $("cbox").hidden = !sel;
-  if (sel) { const c = CONF[sel];
-    $("cst").textContent = c ? `✓ Bestätigt am ${new Date(c).toLocaleDateString("de-DE")} · 確認済み` : "Noch nicht bestätigt · 未確認";
-    $("conf").textContent = c ? "Erneut bestätigen 再確認" : "Bestätigen 確認"; }
+  if (sel) { const c = CONF[sel], dt = c ? new Date(c.at).toLocaleDateString("de-DE") : "";
+    $("cst").textContent = !c ? "Noch nicht bestätigt · 未確認" : c.status === "problem" ? `⚠ Problem gemeldet am ${dt}: ${c.kommentar} · 問題あり` : `✓ Bestätigt am ${dt} · 確認済み`;
+    $("conf").textContent = c ? "Antwort ändern 回答を変更" : "Bestätigen / Rückmeldung 確認"; }
   const s = $("sum");
   if (!sel || !$("list").checked) { s.style.display = "none"; return; }
   const it = items(), nv = it.filter(x => x.vertretung).length;
@@ -193,14 +209,26 @@ $("plan").onchange = () => loadPlan($("plan").value);
 $("ics").onclick = downloadICS;
 $("pdf").onclick = () => window.print();
 $("xls").onclick = downloadXLSX;
-async function confirmPlan() {
+const radio = () => document.querySelector("input[name=st]:checked").value;
+const syncDlg = () => { $("cm").hidden = radio() !== "problem"; };
+document.querySelectorAll("input[name=st]").forEach(r => r.onchange = syncDlg);
+function confirmPlan() {
   if (!sel) return;
-  if (!confirm(`${sel}: Bist du sicher?\nPassen alle Daten und Tage?\nDann klicke auf OK.\n\n本当によろしいですか？\n日程・曜日はすべて合っていますか？\n問題なければ「OK」を押してください。`)) return;
-  const at = new Date().toISOString();
-  const { error } = await sb.from("confirmations").upsert({ plan_id: planId, name: sel, confirmed_at: at }, { onConflict: "plan_id,name" });
-  if (error) { alert("Das hat nicht geklappt: " + error.message); return; }
-  CONF[sel] = at; apply();
+  const c = CONF[sel] || {};
+  $("dtitle").textContent = sel;
+  document.querySelector(`input[name=st][value=${c.status === "problem" ? "problem" : "ok"}]`).checked = true;
+  $("ctext").value = c.kommentar || ""; $("derr").textContent = ""; syncDlg();
+  $("dlg").showModal();
 }
 $("conf").onclick = confirmPlan;
+$("dcancel").onclick = () => $("dlg").close();
+$("dok").onclick = async () => {
+  const status = radio(), kommentar = $("ctext").value.trim();
+  if (status === "problem" && !kommentar) { $("derr").textContent = "Bitte kurz beschreiben, was nicht stimmt. · 内容をご記入ください。"; return; }
+  const at = new Date().toISOString(), k = status === "problem" ? kommentar : null;
+  const { error } = await sb.from("confirmations").upsert({ plan_id: planId, name: sel, confirmed_at: at, status, kommentar: k }, { onConflict: "plan_id,name" });
+  if (error) { $("derr").textContent = "Das hat nicht geklappt: " + error.message; return; }
+  CONF[sel] = { at, status, kommentar: k || "" }; $("dlg").close(); apply();
+};
 start();
 </script></body></html>
