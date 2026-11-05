@@ -143,6 +143,7 @@ function apply() {
   s.innerHTML = `<b>${sel}</b>: ${it.length} Einsätze${$("vonly").checked ? "" : `, davon ${nv} Vertretung${nv == 1 ? "" : "en"}`}<ul>` +
     it.map(x => `<li>${WD[(parse(x.datum).getDay() + 6) % 7].slice(0, 2)} ${label(x.datum)} ${TEIL[x.teil]} · Kurs ${x.kurs}${x.vertretung ? " · <b>Vertretung</b> <span class=\"ja\">代講</span>" : ""}${x.hinweis ? " · " + x.hinweis : ""}</li>`).join("") + "</ul>";
 }
+const fold = l => l.length > 70 ? l.match(/.{1,70}/gu).join("\r\n ") : l;
 function downloadICS() {
   const esc = s => s.replace(/[\\;,]/g, "\\$&"), stamp = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z";
   const L = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Deutschkurs-Plan//DE", "CALSCALE:GREGORIAN"];
@@ -152,10 +153,10 @@ function downloadICS() {
     if (t) L.push(`DTSTART:${d}T${t[0].replace(":", "")}00`, `DTEND:${d}T${t[1].replace(":", "")}00`);
     else { const n = parse(x.datum); n.setDate(n.getDate() + 1); L.push(`DTSTART;VALUE=DATE:${d}`, `DTEND;VALUE=DATE:${iso(n).replace(/-/g, "")}`); }
     L.push(`SUMMARY:${esc(`${CONFIG.TITLE ?? "Gaimusho"} ${x.kurs}${x.vertretung ? " (Vertretung)" : ""}`)}`,
-      `DESCRIPTION:${esc(`${planName} · ${x.name}${x.hinweis ? " · " + x.hinweis : ""}`)}`, "END:VEVENT");
+      `DESCRIPTION:${esc(`${planName} · ${x.name}${x.hinweis ? " · " + x.hinweis : ""}`)}`, `LOCATION:${esc(CONFIG.LOCATION ?? "4 Chome-2-1 Sagamiono, Minami Ward, Sagamihara, Kanagawa 252-0303, Japan")}`, "END:VEVENT");
   });
   L.push("END:VCALENDAR");
-  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([L.join("\r\n")], { type: "text/calendar" }));
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([L.map(fold).join("\r\n")], { type: "text/calendar" }));
   a.download = `Deutschkurs_${sel}.ics`; a.click();
 }
 

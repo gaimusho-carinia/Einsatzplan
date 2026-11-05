@@ -6,6 +6,10 @@ Deno.serve(async (req) => {
   }
   const { record: r } = await req.json();
   if (!r) return new Response("nothing to do");
+  // Nur bei Problemen mailen: Secret NOTIFY_ONLY_PROBLEMS = true setzen
+  if (Deno.env.get("NOTIFY_ONLY_PROBLEMS") === "true" && r.status !== "problem") {
+    return new Response("skipped (kein Problem)");
+  }
 
   let planName = "";
   try {
